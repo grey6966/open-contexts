@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Tapping Shift on its own while the switcher is open moves the selection back one window; `⇧Tab` still moves back a single step.
+
+### 新增
+
+- 切换器打开时轻按一下 Shift 即可向后移动一格；`⇧Tab` 仍保持一次后退一格。
+
 ### Changed
 
 - The window switcher no longer moves the keyboard selection when the pointer hovers over the list. Hovering only previews the row under the cursor with a light-blue mask and a blue dashed outline—weaker than the keyboard-selected row—and clicking a row opens that window directly, so continuing to press the shortcut keeps stepping from the same position.
