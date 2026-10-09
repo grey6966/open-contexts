@@ -40,7 +40,7 @@ The window switcher displays windows in most recently used order. You can contin
 | --- | --- |
 | Window switching | Displays and switches individual windows rather than apps, and tracks most recently used (MRU) order |
 | Screen edge sidebar | Supports the left, right, or bottom edge; always visible or shown when the pointer reaches the screen edge; optionally shows icons alone or icons with titles |
-| Keyboard switcher | Defaults to `⌘Tab` for all windows and `Command + backtick` for the current app; both shortcuts are customizable in Settings; tap Shift on its own to step back one window, arrow keys, `Esc`, and releasing a shortcut modifier to confirm |
+| Keyboard switcher | Defaults to `⌘Tab` for all windows and `Command + backtick` for the current app; both shortcuts are customizable in Settings; tap or hold Shift to step back—holding repeats like a held Tab does when moving forward—arrow keys, `Esc`, and releasing a shortcut modifier to confirm |
 | Window activation | Attempts to restore minimized or hidden windows when activated |
 | Window information | Displays app icons, window titles, and notification badges readable from the system Dock |
 | Native macOS app | Built with Swift, AppKit, and SwiftUI; app updates use Sparkle |

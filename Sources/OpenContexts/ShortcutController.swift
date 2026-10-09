@@ -67,6 +67,8 @@ private struct ShortcutState {
     private(set) var heldModifiers: CGEventFlags = []
     private var shiftIsDown = false
 
+    var isShiftDown: Bool { shiftIsDown }
+
     mutating func begin(currentAppOnly: Bool, allowed: Bool,
                         modifiers: CGEventFlags = .maskCommand,
                         shiftHeld: Bool = false) -> SwitcherAction? {
@@ -117,12 +119,14 @@ final class ShortcutController: ObservableObject {
     private var runLoopSource: CFRunLoopSource?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var state = ShortcutState()
+    private var shiftRepeatTimer: Timer?
     private var recordingMonitor: Any?
     private var saveRecording: ((KeyboardShortcut) -> Bool)?
 
     func configure(allWindows: KeyboardShortcut, currentApp: KeyboardShortcut) {
         guard allWindows.isValid, currentApp.isValid, !allWindows.conflicts(with: currentApp),
               allWindows != allWindowsShortcut || currentApp != currentAppShortcut else { return }
+        stopShiftRepeat()
         if let action = state.finish(commit: false) { onAction?(action) }
         allWindowsShortcut = allWindows
         currentAppShortcut = currentApp
@@ -130,6 +134,7 @@ final class ShortcutController: ObservableObject {
 
     func beginRecording(currentAppOnly: Bool, onSave: @escaping (KeyboardShortcut) -> Bool) {
         cancelRecording()
+        stopShiftRepeat()
         if let action = state.finish(commit: false) { onAction?(action) }
         recordingCurrentAppOnly = currentAppOnly
         saveRecording = onSave
@@ -199,6 +204,7 @@ final class ShortcutController: ObservableObject {
 
     func stop() {
         cancelRecording()
+        stopShiftRepeat()
         if let action = state.finish(commit: false) { onAction?(action) }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
@@ -215,11 +221,13 @@ final class ShortcutController: ObservableObject {
     }
 
     func resetState() {
+        stopShiftRepeat()
         _ = state.finish(commit: false)
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            stopShiftRepeat()
             if let action = state.finish(commit: false) { emit(action, deferred: true) }
             if AXIsProcessTrusted(), let eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
@@ -228,6 +236,7 @@ final class ShortcutController: ObservableObject {
         }
 
         guard AXIsProcessTrusted() else {
+            stopShiftRepeat()
             if let action = state.finish(commit: false) { emit(action, deferred: true) }
             isRunning = false
             return Unmanaged.passUnretained(event)
@@ -257,9 +266,23 @@ final class ShortcutController: ObservableObject {
     }
 
     private func modifierAction(flags: CGEventFlags) -> SwitcherAction? {
-        guard state.isSwitching else { return nil }
-        guard flags.contains(state.heldModifiers) else { return state.finish(commit: true) }
-        return state.shiftFlagsChanged(flags)
+        guard state.isSwitching else {
+            stopShiftRepeat()
+            return nil
+        }
+        guard flags.contains(state.heldModifiers) else {
+            stopShiftRepeat()
+            return state.finish(commit: true)
+        }
+        let action = state.shiftFlagsChanged(flags)
+        if action == .step(-1) {
+            // A fresh Shift press steps back immediately and arms hold-to-repeat.
+            startShiftRepeat()
+        } else if !state.isShiftDown {
+            // Shift released while the switcher stays open: stop repeating but keep switching.
+            stopShiftRepeat()
+        }
+        return action
     }
 
     private func keyAction(keyCode: UInt16, flags: CGEventFlags) -> SwitcherAction? {
@@ -276,6 +299,7 @@ final class ShortcutController: ObservableObject {
             case 125:
                 return state.step(1)
             case 53:
+                stopShiftRepeat()
                 return state.finish(commit: false)
             default:
                 return nil
@@ -294,12 +318,54 @@ final class ShortcutController: ObservableObject {
             return nil
         }
 
+        stopShiftRepeat()
         return state.begin(
             currentAppOnly: currentAppOnly,
             allowed: canBegin?(currentAppOnly) ?? true,
             modifiers: shortcut.modifiers,
             shiftHeld: flags.contains(.maskShift)
         )
+    }
+
+    /// Holding Shift keeps stepping back one window at a time, mirroring how a held Tab
+    /// auto-repeats forward. The system key-repeat delay and interval keep both directions
+    /// feeling identical.
+    private func startShiftRepeat() {
+        stopShiftRepeat()
+        guard state.isSwitching else { return }
+        let timer = Timer(timeInterval: max(0.05, NSEvent.keyRepeatDelay), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.state.isSwitching, self.state.isShiftDown else {
+                    self?.stopShiftRepeat()
+                    return
+                }
+                self.onAction?(.step(-1))
+                self.repeatShiftSteps()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        shiftRepeatTimer = timer
+    }
+
+    private func repeatShiftSteps() {
+        stopShiftRepeat()
+        guard state.isSwitching, state.isShiftDown else { return }
+        let timer = Timer(timeInterval: max(0.01, NSEvent.keyRepeatInterval), repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.state.isSwitching, self.state.isShiftDown else {
+                    self?.stopShiftRepeat()
+                    return
+                }
+                self.onAction?(.step(-1))
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        shiftRepeatTimer = timer
+    }
+
+    private func stopShiftRepeat() {
+        shiftRepeatTimer?.invalidate()
+        shiftRepeatTimer = nil
     }
 
     private func emit(_ action: SwitcherAction, deferred: Bool) {
@@ -318,6 +384,7 @@ final class ShortcutController: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     self.cancelRecording()
+                    self.stopShiftRepeat()
                     if let action = self.state.finish(commit: false) { self.onAction?(action) }
                     if let eventTap = self.eventTap { CGEvent.tapEnable(tap: eventTap, enable: false) }
                     self.isRunning = false
@@ -352,13 +419,18 @@ final class ShortcutController: ObservableObject {
         guard controller.keyAction(keyCode: 48, flags: []) == nil,
               controller.keyAction(keyCode: 48, flags: [.maskCommand, .maskControl]) == nil,
               controller.keyAction(keyCode: 48, flags: .maskCommand) == .begin(currentAppOnly: false),
-              // Pressing Shift on its own immediately steps back one window.
+              // Pressing Shift on its own immediately steps back one window and arms hold-to-repeat.
               controller.modifierAction(flags: [.maskCommand, .maskShift]) == .step(-1),
-              // Holding Shift does not repeat the step, and releasing it does nothing.
+              controller.shiftRepeatTimer != nil,
+              // Holding Shift keeps the repeat armed without stepping again on its own.
               controller.modifierAction(flags: [.maskCommand, .maskShift]) == nil,
+              controller.shiftRepeatTimer != nil,
+              // Releasing Shift stops repeating but leaves the switcher open.
               controller.modifierAction(flags: .maskCommand) == nil,
-              // Tapping Shift again steps back once more.
+              controller.shiftRepeatTimer == nil,
+              // Tapping Shift again steps back once more and re-arms the repeat timer.
               controller.modifierAction(flags: [.maskCommand, .maskShift]) == .step(-1),
+              controller.shiftRepeatTimer != nil,
               // ⇧Tab no longer reverses; Tab always advances.
               controller.keyAction(keyCode: 48, flags: [.maskCommand, .maskShift]) == .step(1),
               controller.keyAction(keyCode: 50, flags: .maskCommand) == .step(1),
@@ -375,7 +447,10 @@ final class ShortcutController: ObservableObject {
               shiftHeldFromStart.keyAction(keyCode: 48, flags: [.maskCommand, .maskShift]) == .step(1),
               shiftHeldFromStart.modifierAction(flags: .maskCommand) == nil,
               shiftHeldFromStart.modifierAction(flags: [.maskCommand, .maskShift]) == .step(-1),
-              shiftHeldFromStart.keyAction(keyCode: 53, flags: .maskCommand) == .cancel else { return false }
+              shiftHeldFromStart.shiftRepeatTimer != nil,
+              // Escape cancels the switcher and tears the repeat timer down with it.
+              shiftHeldFromStart.keyAction(keyCode: 53, flags: .maskCommand) == .cancel,
+              shiftHeldFromStart.shiftRepeatTimer == nil else { return false }
 
         let custom = KeyboardShortcut(keyCode: 16, modifiers: [.maskControl, .maskAlternate], keyLabel: "Y")
         let sameKey = KeyboardShortcut(keyCode: 16, modifiers: .maskCommand, keyLabel: "Y")
