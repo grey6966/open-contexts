@@ -164,12 +164,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func handle(_ action: SwitcherAction) {
         switch action {
-        case let .begin(currentAppOnly, reverse):
+        case let .begin(currentAppOnly):
             self.currentAppOnly = currentAppOnly
             currentAppPID = currentAppOnly ? NSWorkspace.shared.frontmostApplication?.processIdentifier : nil
             switchingWindows = availableWindows(currentAppOnly: currentAppOnly, pid: currentAppPID)
             guard !switchingWindows.isEmpty else { return }
-            selectedIndex = reverse ? switchingWindows.count - 1 : min(1, switchingWindows.count - 1)
+            selectedIndex = min(1, switchingWindows.count - 1)
             switchers.values.forEach { $0.show(windows: switchingWindows, selectedIndex: selectedIndex) }
         case let .step(amount):
             guard !switchingWindows.isEmpty else { return }

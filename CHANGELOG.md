@@ -4,11 +4,11 @@
 
 ### Added
 
-- Tapping Shift on its own while the switcher is open moves the selection back one window; `⇧Tab` still moves back a single step.
+- Pressing Shift on its own while the switcher is open immediately moves the selection back one window; `⇧Tab` no longer reverses.
 
 ### 新增
 
-- 切换器打开时轻按一下 Shift 即可向后移动一格；`⇧Tab` 仍保持一次后退一格。
+- 切换器打开时按下 Shift 即可立即向后移动一格；`⇧Tab` 不再反向。
 
 ### Changed
 
