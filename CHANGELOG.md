@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The window switcher no longer moves the keyboard selection when the pointer hovers over the list. Hovering only previews the row under the cursor with a light-blue mask and a blue dashed outline—weaker than the keyboard-selected row—and clicking a row opens that window directly, so continuing to press the shortcut keeps stepping from the same position.
+
+### 调整
+
+- 切换器列表在鼠标悬停时不再改变键盘选择，仅在被悬停的窗口行上叠加浅蓝色遮罩与蓝色虚线框（弱于键盘选中行）；点击某一行直接打开该窗口，继续按快捷键仍从当前位置切换。
+
 ## [0.3.9] - 2026-10-09
 
 ### Added
